@@ -1932,16 +1932,33 @@ jv jv_object_merge(jv a, jv b) {
   return a;
 }
 
-jv jv_object_merge_recursive(jv a, jv b) {
+#ifndef MAX_MERGE_DEPTH
+#define MAX_MERGE_DEPTH (1024)
+#endif
+
+static jv jvp_object_merge_recursive(jv a, jv b, int depth) {
   assert(JVP_HAS_KIND(a, JV_KIND_OBJECT));
   assert(JVP_HAS_KIND(b, JV_KIND_OBJECT));
+
+  if (depth > MAX_MERGE_DEPTH) {
+    jv_free(a);
+    jv_free(b);
+    return jv_invalid_with_msg(jv_string("Recursive merge depth exceeded"));
+  }
 
   jv_object_foreach(b, k, v) {
     jv elem = jv_object_get(jv_copy(a), jv_copy(k));
     if (jv_is_valid(elem) &&
         JVP_HAS_KIND(elem, JV_KIND_OBJECT) &&
         JVP_HAS_KIND(v, JV_KIND_OBJECT)) {
-      a = jv_object_set(a, k, jv_object_merge_recursive(elem, v));
+      jv merged = jvp_object_merge_recursive(elem, v, depth + 1);
+      if (!jv_is_valid(merged)) {
+        jv_free(k);
+        jv_free(a);
+        a = merged;
+        break;
+      }
+      a = jv_object_set(a, k, merged);
     } else {
       jv_free(elem);
       a = jv_object_set(a, k, v);
@@ -1950,6 +1967,10 @@ jv jv_object_merge_recursive(jv a, jv b) {
   }
   jv_free(b);
   return a;
+}
+
+jv jv_object_merge_recursive(jv a, jv b) {
+  return jvp_object_merge_recursive(a, b, 0);
 }
 
 /*
